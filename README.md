@@ -48,13 +48,14 @@ badil acts on GitHub through a GitHub App that you own.
 
 Run every block in the same shell, from a clone of this repo: later blocks use the variables the first one sets. Each block runs the commands `up.sh` runs, with the same flags and versions, and writes the same files under `.quickstart/`, so you can stop at any step and finish with `./up.sh`.
 
-Clone this repo, then set your values in place of the `<...>` placeholders. `BADIL_PRIVATE_KEY` is the full path to the `.pem` file. `CTX` is the cluster's kubectl context: every command passes it, so your current context never changes.
+Clone this repo, then set your values in place of the `<...>` placeholders. `BADIL_GITOPS_REPO` repeats the repo name for `up.sh`, which reads that variable. `BADIL_PRIVATE_KEY` is the full path to the `.pem` file. `CTX` is the cluster's kubectl context: every command passes it, so your current context never changes.
 
 ```bash
 git clone https://github.com/badilhq/quickstart.git
 cd quickstart
 
 export GITOPS_REPO="<your-login>/badil-quickstart-gitops"
+export BADIL_GITOPS_REPO="$GITOPS_REPO"
 export BADIL_APP_ID="<app-id>"
 export BADIL_INSTALLATION_ID="<installation-id>"
 export BADIL_PRIVATE_KEY="<full-path-to-the-app-key.pem>"
@@ -283,11 +284,12 @@ The demo depends on [`badilhq/demo-backend-1#53`](https://github.com/badilhq/dem
 
 ## Teardown
 
-By hand, delete the cluster, then, if you no longer need them, the gitops repo and the App. No script deletes the repo or the App. `gh repo delete` needs the `delete_repo` scope: run `gh auth refresh -s delete_repo` first if `gh` asks for it.
+By hand, delete the cluster, then, if you no longer need them, the gitops repo and the App. No script deletes the repo or the App. Run the commands from the clone of this repo: the repo name comes from `GITOPS_REPO`, else from `.quickstart/gitops-repo`, and the command stops when neither is set. `gh repo delete` needs the `delete_repo` scope: run `gh auth refresh -s delete_repo` first if `gh` asks for it.
 
 ```bash
 k3d cluster delete badil-quickstart
-gh repo delete "$GITOPS_REPO"
+repo="${GITOPS_REPO:-$(cat .quickstart/gitops-repo)}"
+gh repo delete "${repo:?no gitops repo: set GITOPS_REPO=owner/name}"
 ```
 
 To delete the App, open https://github.com/settings/apps, select it, click **Advanced**, then **Delete GitHub App**.
