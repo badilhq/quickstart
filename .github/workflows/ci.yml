@@ -14,3 +14,41 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: shellcheck up.sh down.sh
+
+  docs:
+    needs: shellcheck
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    concurrency:
+      group: badil-dev-quickstart
+      cancel-in-progress: false
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: badilhq
+          repositories: badil.dev
+          permission-contents: write
+
+      - name: Point badilhq/badil.dev's quickstart page at this commit
+        env:
+          SHA: ${{ github.sha }}
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          repo="$RUNNER_TEMP/badil.dev"
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/badilhq/badil.dev.git" "$repo"
+          cd "$repo"
+          printf '%s\n' "$SHA" > docs/quickstart-version
+          git add docs/quickstart-version
+          if git diff --cached --quiet; then
+            echo "badil.dev already shows $SHA"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "chore(docs): show quickstart ${SHA:0:7}"
+          git push origin HEAD:main
