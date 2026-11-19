@@ -119,7 +119,9 @@ EOF
   git -C "$dir" add -A
   if ! git -C "$dir" diff --cached --quiet; then
     git -C "$dir" commit -q -m "chore: configure the badil quickstart"
-    git -C "$dir" push -q
+    # Push through gh's credential helper: a gh login alone does not set up
+    # git's https credentials (gh auth setup-git does).
+    git -C "$dir" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -q
   fi
   rm -rf "$CLONE_DIR"
   CLONE_DIR=""
