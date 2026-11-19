@@ -76,9 +76,18 @@ read_app_inputs() {
   APP_INPUTS_READ=1
 }
 
+CLONE_DIR=""
+cleanup() {
+  if [[ -n "$CLONE_DIR" ]]; then
+    rm -rf "$CLONE_DIR"
+  fi
+}
+trap cleanup EXIT
+
 create_gitops_repo() {
   local tmp dir url
   tmp="$(mktemp -d)"
+  CLONE_DIR="$tmp"
   dir="${tmp}/${GITOPS_REPO#*/}"
   url="https://github.com/${GITOPS_REPO}.git"
   (cd "$tmp" && gh repo create "$GITOPS_REPO" --public --template badilhq/gitops-template --clone)
@@ -112,6 +121,7 @@ EOF
   git -C "$dir" commit -q -m "chore: configure the badil quickstart"
   git -C "$dir" push -q
   rm -rf "$tmp"
+  CLONE_DIR=""
 }
 
 # Prints "<name> <sync> <health>" for the preview's Application.
@@ -217,8 +227,11 @@ helm upgrade --install argocd argo-cd \
   --version "$ARGOCD_CHART_VERSION" \
   --kube-context "$CTX" -n argocd --create-namespace --wait
 for file in appproject-previews.yaml applicationset-previews.yaml; do
-  gh api "repos/${GITOPS_REPO}/contents/argocd/${file}" -H 'Accept: application/vnd.github.raw' \
-    | kubectl --context "$CTX" apply -f -
+  manifest="$(gh api "repos/${GITOPS_REPO}/contents/argocd/${file}" -H 'Accept: application/vnd.github.raw')"
+  if [[ "$manifest" == *"YOUR-ORG/YOUR-GITOPS-REPO"* ]]; then
+    die "argocd/${file} in ${GITOPS_REPO} still has the template placeholder; delete the repo (gh repo delete ${GITOPS_REPO}) and re-run"
+  fi
+  printf '%s\n' "$manifest" | kubectl --context "$CTX" apply -f -
 done
 step_done
 
@@ -228,12 +241,13 @@ state_secret deploy-token
 state_secret webhook-secret
 kubectl --context "$CTX" create namespace badil --dry-run=client -o yaml \
   | kubectl --context "$CTX" apply -f -
-kubectl --context "$CTX" -n badil create secret generic badil \
+secret_result="$(kubectl --context "$CTX" -n badil create secret generic badil \
   --from-file=github-private-key="$BADIL_PRIVATE_KEY" \
   --from-file=github-webhook-secret="${STATE_DIR}/webhook-secret" \
   --from-file=deploy-token="${STATE_DIR}/deploy-token" \
   --dry-run=client -o yaml \
-  | kubectl --context "$CTX" apply -f -
+  | kubectl --context "$CTX" apply -f -)"
+echo "$secret_result"
 helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
   --version "$BADIL_CHART_VERSION" \
   --kube-context "$CTX" -n badil \
@@ -244,9 +258,14 @@ helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
   --set ingress.enabled=true \
   --set-string ingress.className=traefik \
   --set-string ingress.host="$BADIL_HOST"
+# The pod reads the Secret as env vars: restart it when a re-run changed the Secret.
+if [[ "$secret_result" == *" configured"* ]]; then
+  kubectl --context "$CTX" -n badil rollout restart deploy/badil
+  kubectl --context "$CTX" -n badil rollout status deploy/badil --timeout="${HEALTH_WAIT_SECONDS}s"
+fi
 echo "    waiting for http://${BADIL_HOST}/healthz"
 deadline=$((SECONDS + HEALTH_WAIT_SECONDS))
-until [[ "$(curl -s -o /dev/null -w '%{http_code}' "http://${BADIL_HOST}/healthz" || true)" == "200" ]]; do
+until [[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://${BADIL_HOST}/healthz" || true)" == "200" ]]; do
   if ((SECONDS >= deadline)); then
     echo "badil did not answer on http://${BADIL_HOST}/healthz within ${HEALTH_WAIT_SECONDS}s" >&2
     echo "Inspect with:" >&2
@@ -305,7 +324,7 @@ until preview_apps_ready; do
   sleep 5
 done
 echo "    Argo CD Applications Synced and Healthy"
-until curl -s "$items_url" 2>/dev/null | grep -qE '"version": *"pull request"'; do
+until curl -s --max-time 5 "$items_url" 2>/dev/null | grep -qE '"version": *"pull request"'; do
   if ((SECONDS >= deadline)); then
     echo "${items_url} does not serve the pull request version after ${WAIT_SECONDS}s" >&2
     print_inspect
