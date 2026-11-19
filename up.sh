@@ -52,18 +52,12 @@ state_secret() {
   chmod 600 "$file"
 }
 
-repo_exists() {
-  gh repo view "$1" >/dev/null 2>&1
-}
-
-APP_INPUTS_READ=0
 read_app_inputs() {
   if [[ -z "${BADIL_APP_ID:-}" ]]; then
     read -r -p "GitHub App ID: " BADIL_APP_ID || die "BADIL_APP_ID is not set"
   fi
   if [[ -z "${BADIL_INSTALLATION_ID:-}" ]]; then
-    echo "Install the GitHub App on ${GITOPS_REPO} now (Only select repositories)."
-    echo "Then paste the number the installation's browser URL ends with (/settings/installations/<ID>)."
+    echo "Paste the number the App installation's browser URL ends with (/settings/installations/<ID>)."
     read -r -p "Installation ID: " BADIL_INSTALLATION_ID || die "BADIL_INSTALLATION_ID is not set"
   fi
   if [[ -z "${BADIL_PRIVATE_KEY:-}" ]]; then
@@ -73,7 +67,12 @@ read_app_inputs() {
   [[ -n "$BADIL_APP_ID" ]] || die "the GitHub App ID is empty"
   [[ -n "$BADIL_INSTALLATION_ID" ]] || die "the installation ID is empty"
   [[ -r "$BADIL_PRIVATE_KEY" ]] || die "cannot read the private key ${BADIL_PRIVATE_KEY}"
-  APP_INPUTS_READ=1
+}
+
+# Prints a file of the gitops repo's default branch.
+gitops_file() {
+  gh api "repos/${GITOPS_REPO}/contents/$1" -H 'Accept: application/vnd.github.raw' \
+    || die "cannot read $1 in ${GITOPS_REPO}"
 }
 
 CLONE_DIR=""
@@ -84,21 +83,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-create_gitops_repo() {
-  local tmp dir url
-  tmp="$(mktemp -d)"
-  CLONE_DIR="$tmp"
-  dir="${tmp}/${GITOPS_REPO#*/}"
+# Commits the repo's URL to the argocd files and, when badil.yaml is still the
+# template's, the demo catalog, then pushes to the default branch.
+fill_gitops_repo() {
+  local dir url f
+  CLONE_DIR="$(mktemp -d)"
+  dir="${CLONE_DIR}/gitops"
   url="https://github.com/${GITOPS_REPO}.git"
-  (cd "$tmp" && gh repo create "$GITOPS_REPO" --public --template badilhq/gitops-template --clone)
-  [[ -f "${dir}/argocd/applicationset-previews.yaml" && -f "${dir}/argocd/appproject-previews.yaml" ]] \
-    || die "the clone of ${GITOPS_REPO} has no argocd/ files; delete the repo and re-run"
-  local f
-  for f in "${dir}/argocd/applicationset-previews.yaml" "${dir}/argocd/appproject-previews.yaml"; do
+  gh repo clone "$GITOPS_REPO" "$dir" -- -q
+  for f in "${dir}/argocd/appproject-previews.yaml" "${dir}/argocd/applicationset-previews.yaml"; do
     sed "s|https://github.com/YOUR-ORG/YOUR-GITOPS-REPO.git|${url}|g" "$f" >"${f}.tmp"
     mv "${f}.tmp" "$f"
   done
-  cat >"${dir}/badil.yaml" <<EOF
+  if grep -q "YOUR-ORG/my-service" "${dir}/badil.yaml"; then
+    cat >"${dir}/badil.yaml" <<EOF
 services:
   backend-1:
     repo: "https://github.com/badilhq/demo-backend-1.git"
@@ -117,10 +115,13 @@ preview:
     backend-1: {}
     backend-2: {}
 EOF
+  fi
   git -C "$dir" add -A
-  git -C "$dir" commit -q -m "chore: configure the badil quickstart"
-  git -C "$dir" push -q
-  rm -rf "$tmp"
+  if ! git -C "$dir" diff --cached --quiet; then
+    git -C "$dir" commit -q -m "chore: configure the badil quickstart"
+    git -C "$dir" push -q
+  fi
+  rm -rf "$CLONE_DIR"
   CLONE_DIR=""
 }
 
@@ -187,23 +188,24 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 write_state gitops-repo "$GITOPS_REPO"
 echo "    gitops repo: ${GITOPS_REPO}"
-GITOPS_REPO_EXISTS=0
-if repo_exists "$GITOPS_REPO"; then
-  GITOPS_REPO_EXISTS=1
-  read_app_inputs
-fi
+gh repo view "$GITOPS_REPO" >/dev/null 2>&1 \
+  || die "${GITOPS_REPO} not found: create it from badilhq/gitops-template (Use this template, Public), install the App on it, then re-run"
+[[ "$(gh repo view "$GITOPS_REPO" --json visibility --jq .visibility)" == "PUBLIC" ]] \
+  || die "${GITOPS_REPO} must be public: Argo CD reads it without credentials"
+read_app_inputs
 step_done
 
 # 3. Gitops repo
 step "3/9 Gitops repo"
-if [[ "$GITOPS_REPO_EXISTS" -eq 1 ]]; then
-  echo "    ${GITOPS_REPO} exists, left as it is"
+appproject="$(gitops_file argocd/appproject-previews.yaml)"
+applicationset="$(gitops_file argocd/applicationset-previews.yaml)"
+catalog="$(gitops_file badil.yaml)"
+if [[ "$appproject" == *"YOUR-ORG/YOUR-GITOPS-REPO"* || "$applicationset" == *"YOUR-ORG/YOUR-GITOPS-REPO"* \
+  || "$catalog" == *"YOUR-ORG/my-service"* ]]; then
+  fill_gitops_repo
+  echo "    filled https://github.com/${GITOPS_REPO}"
 else
-  create_gitops_repo
-  echo "    created https://github.com/${GITOPS_REPO}"
-fi
-if [[ "$APP_INPUTS_READ" -eq 0 ]]; then
-  read_app_inputs
+  echo "    ${GITOPS_REPO} already filled"
 fi
 step_done
 
@@ -229,7 +231,7 @@ helm upgrade --install argocd argo-cd \
 for file in appproject-previews.yaml applicationset-previews.yaml; do
   manifest="$(gh api "repos/${GITOPS_REPO}/contents/argocd/${file}" -H 'Accept: application/vnd.github.raw')"
   if [[ "$manifest" == *"YOUR-ORG/YOUR-GITOPS-REPO"* ]]; then
-    die "argocd/${file} in ${GITOPS_REPO} still has the template placeholder; delete the repo (gh repo delete ${GITOPS_REPO}) and re-run"
+    die "argocd/${file} in ${GITOPS_REPO} still has the template placeholder; re-run up.sh to fill it"
   fi
   printf '%s\n' "$manifest" | kubectl --context "$CTX" apply -f -
 done

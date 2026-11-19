@@ -8,7 +8,17 @@ Try badil on your machine in about 5 minutes, once the images are downloaded: on
 - Host ports 80 and 443 free. Only one such cluster (for example `badil-quickstart` or `badil-testbed`) runs at a time, because each takes ports 80 and 443.
 - macOS (Docker Desktop) or Linux.
 
-## Before you run: create the GitHub App
+## Before you run
+
+### 1. Create the gitops repo
+
+badil commits previews to a gitops repo that Argo CD reads.
+
+1. Open https://github.com/badilhq/gitops-template and click **Use this template**, then **Create a new repository**.
+2. **Owner:** your account. **Repository name:** `badil-quickstart-gitops`, or any name you then pass as `BADIL_GITOPS_REPO=owner/name`.
+3. Choose **Public**: Argo CD reads the repo without credentials.
+
+### 2. Create the GitHub App
 
 badil acts on GitHub through a GitHub App that you own.
 
@@ -25,6 +35,12 @@ badil acts on GitHub through a GitHub App that you own.
 6. Click **Create GitHub App** and note the **App ID**.
 7. Under **Private keys**, click **Generate a private key** and save the `.pem` file outside this repository.
 
+### 3. Install the App on the gitops repo
+
+1. On the App's settings page, click **Install App**, then **Install** next to your account.
+2. Choose **Only select repositories** and select the gitops repo only.
+3. After the install, the browser URL ends with `/settings/installations/<ID>`. Note that number: it is the installation ID.
+
 ## Run
 
 ```bash
@@ -33,17 +49,11 @@ cd quickstart
 ./up.sh
 ```
 
-`up.sh` asks for the App ID and the path to the `.pem` file, or reads them from `BADIL_APP_ID` and `BADIL_PRIVATE_KEY`.
+`up.sh` asks for the App ID, the installation ID and the path to the `.pem` file, or reads them from `BADIL_APP_ID`, `BADIL_INSTALLATION_ID` and `BADIL_PRIVATE_KEY`.
 
-It creates your gitops repo, `<your-login>/badil-quickstart-gitops` (public, from `badilhq/gitops-template`); set `BADIL_GITOPS_REPO=owner/name` to pick another name.
+On its first run, `up.sh` commits the demo service catalog (`badil.yaml`) and the repo's own URL (in `argocd/`) to your gitops repo's default branch. A `badil.yaml` you already wrote is kept.
 
-**During the run:** when `up.sh` pauses after creating the gitops repo, install the App:
-
-1. Open https://github.com/settings/apps, pick your App, then **Install App** and your account.
-2. Choose **Only select repositories** and select the gitops repo only.
-3. After the install, the browser URL ends with `/settings/installations/<ID>`. Copy that number and enter it at the prompt (or set `BADIL_INSTALLATION_ID` before the run).
-
-`up.sh` is safe to re-run: it reuses the cluster, the gitops repo and the tokens in `.quickstart/`.
+`up.sh` is safe to re-run: it reuses the cluster, the filled gitops repo and the tokens in `.quickstart/`.
 
 ## What you see
 
