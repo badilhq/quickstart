@@ -1,6 +1,6 @@
 # badil quickstart
 
-Try badil on your machine in about 5 minutes, once the images are downloaded: a local k3d cluster runs Argo CD and badil, and badil deploys a preview of a real pull request. Two ways to get there:
+This guide runs badil and Argo CD on a local k3d cluster, and badil deploys a preview of the pull request [`badilhq/demo-backend-1#53`](https://github.com/badilhq/demo-backend-1/pull/53). Run the steps by hand, or with `./up.sh`:
 
 - **By hand:** follow the [walkthrough](#walkthrough). Each step explains what it changes, then gives the commands to copy.
 - **With `./up.sh`:** it runs the same steps with checks, and is safe to re-run. See [Shortcut: `up.sh`](#shortcut-upsh).
@@ -190,7 +190,7 @@ badil reads the Secret when its pod starts. If the Secret changes later (a new k
 
 ### 5. Check badil answers
 
-This prints `200` once badil's pod is up. On the first run the image download can take a minute: repeat it until it does.
+This prints `200` once badil's pod is up. On the first run the pod waits for its image to download: repeat the command until it prints `200`.
 
 ```bash
 curl -s --max-time 5 -o /dev/null -w '%{http_code}\n' http://badil.127.0.0.1.nip.io/healthz
@@ -198,7 +198,7 @@ curl -s --max-time 5 -o /dev/null -w '%{http_code}\n' http://badil.127.0.0.1.nip
 
 ### 6. Deploy the first preview
 
-[`badilhq/demo-backend-1#53`](https://github.com/badilhq/demo-backend-1/pull/53) is a pull request kept open for this demo: it adds `"version": "pull request"` to backend-1's `/items`. Read its head commit, its author and the CI run that built its image:
+[`badilhq/demo-backend-1#53`](https://github.com/badilhq/demo-backend-1/pull/53) is a pull request kept open for this demo: it adds `"version": "pull request"` to backend-1's `/items`. The demo depends on it staying open: if it is closed, `up.sh` stops and says so. Read its head commit, its author and the CI run that built its image:
 
 ```bash
 HEAD_SHA="$(gh api repos/badilhq/demo-backend-1/pulls/53 --jq .head.sha)"
@@ -251,13 +251,13 @@ Then backend-1 answers with the pull request's version, `"version": "pull reques
 curl -s --max-time 5 http://backend-1-quickstart-demo.127.0.0.1.nip.io/items
 ```
 
-### 8. Look around
+### 8. Preview URLs and the Argo CD UI
 
 The preview's services:
 
-- front: http://front-quickstart-demo.127.0.0.1.nip.io
+- front: http://front-quickstart-demo.127.0.0.1.nip.io, at `main`
 - backend-1: http://backend-1-quickstart-demo.127.0.0.1.nip.io/items, at pull request #53
-- backend-2: http://backend-2-quickstart-demo.127.0.0.1.nip.io
+- backend-2: http://backend-2-quickstart-demo.127.0.0.1.nip.io, at `main`
 
 The first command prints the URL of the commit badil wrote to your gitops repo. The next two open the Argo CD UI: print the `admin` password, then forward the UI to https://localhost:8080 (stop it with Ctrl-C).
 
@@ -274,13 +274,6 @@ kubectl --context "$CTX" -n argocd port-forward svc/argocd-server 8080:443
 ```bash
 ./up.sh
 ```
-
-## What you see
-
-- backend-1 runs at the pull request's version: `/items` returns `"version": "pull request"`.
-- front and backend-2 run at `main`.
-
-The demo depends on [`badilhq/demo-backend-1#53`](https://github.com/badilhq/demo-backend-1/pull/53) staying open. If it is closed, `up.sh` stops and says so.
 
 ## Teardown
 
@@ -300,7 +293,7 @@ Shortcut: `down.sh` deletes the cluster, then prints the command and the link to
 ./down.sh
 ```
 
-## Next: the label-a-pull-request loop
+## Next: label-triggered previews
 
 In a real setup, badil previews a pull request when you label it, through the App's webhook. Follow the install guide: https://badil.dev/docs/install.
 
