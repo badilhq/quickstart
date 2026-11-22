@@ -175,11 +175,11 @@ kubectl --context "$CTX" -n badil create secret generic badil \
   | kubectl --context "$CTX" apply -f -
 
 helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
-  --version 0.25.0 \
+  --version 0.27.0 \
   --kube-context "$CTX" -n badil \
   --set-string config.githubAppId="$BADIL_APP_ID" \
   --set-string config.githubInstallationId="$BADIL_INSTALLATION_ID" \
-  --set-string config.gitopsRepo="$GITOPS_REPO" \
+  --set-string config.gitopsRepoURL="https://github.com/${GITOPS_REPO}.git" \
   --set-string existingSecret=badil \
   --set ingress.enabled=true \
   --set-string ingress.className=traefik \
