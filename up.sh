@@ -5,7 +5,7 @@ set -euo pipefail
 # Pinned versions and fixed names.
 K3S_IMAGE="rancher/k3s:v1.37.1-k3s1"
 ARGOCD_CHART_VERSION="10.11.6"
-BADIL_CHART_VERSION="0.27.0"
+BADIL_CHART_VERSION="0.29.0"
 DEMO_PR_URL="https://github.com/badilhq/demo-backend-1/pull/53"
 BADIL_HOST="badil.127.0.0.1.nip.io"
 
