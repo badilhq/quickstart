@@ -8,6 +8,7 @@ ARGOCD_CHART_VERSION="10.11.6"
 BADIL_CHART_VERSION="0.30.0"
 DEMO_PR_URL="https://github.com/badilhq/demo-backend-1/pull/53"
 BADIL_HOST="badil.127.0.0.1.nip.io"
+ARGOCD_HOST="argocd.127.0.0.1.nip.io"
 
 CLUSTER="badil-quickstart"
 CTX="k3d-${CLUSTER}"
@@ -229,6 +230,10 @@ step "5/9 Argo CD"
 helm upgrade --install argocd argo-cd \
   --repo https://argoproj.github.io/argo-helm \
   --version "$ARGOCD_CHART_VERSION" \
+  --set 'configs.params.server\.insecure=true' \
+  --set server.ingress.enabled=true \
+  --set-string server.ingress.ingressClassName=traefik \
+  --set-string server.ingress.hostname="$ARGOCD_HOST" \
   --kube-context "$CTX" -n argocd --create-namespace --wait
 for file in appproject-previews.yaml applicationset-previews.yaml; do
   manifest="$(gh api "repos/${GITOPS_REPO}/contents/argocd/${file}" -H 'Accept: application/vnd.github.raw')"
@@ -348,8 +353,11 @@ echo "    backend-1: ${items_url} (pull request #${DEMO_PR_NUMBER})"
 echo "    backend-2: http://backend-2-${PREVIEW_SLUG}.${PREVIEW_DOMAIN}"
 echo "    gitops commit: ${commit_url}"
 echo
-echo "    Argo CD UI: kubectl --context ${CTX} -n argocd port-forward svc/argocd-server 8080:443"
-echo "      then open https://localhost:8080 as admin, with the password from:"
-echo "      kubectl --context ${CTX} -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+echo "    Argo CD UI: http://${ARGOCD_HOST}"
+if argocd_password="$(kubectl --context "$CTX" -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)"; then
+  echo "    user admin, password ${argocd_password}"
+else
+  echo "    password: the argocd-initial-admin-secret Secret is gone; reset it with the argocd CLI"
+fi
 echo
 echo "    Total: ${SECONDS}s"

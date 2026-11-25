@@ -136,10 +136,16 @@ Then it applies the two manifests of your gitops repo, read through the GitHub A
 - The AppProject `previews` lets the preview Applications use your gitops repo and badil's charts.
 - The ApplicationSet `preview-environments` creates one Argo CD Application per folder that badil writes under `previews/`.
 
+Argo CD's UI is served over plain HTTP on `argocd.127.0.0.1.nip.io` through k3s's Traefik, like the previews.
+
 ```bash
 helm upgrade --install argocd argo-cd \
   --repo https://argoproj.github.io/argo-helm \
   --version 10.11.6 \
+  --set 'configs.params.server\.insecure=true' \
+  --set server.ingress.enabled=true \
+  --set-string server.ingress.ingressClassName=traefik \
+  --set-string server.ingress.hostname=argocd.127.0.0.1.nip.io \
   --kube-context "$CTX" -n argocd --create-namespace --wait
 gh api "repos/${GITOPS_REPO}/contents/argocd/appproject-previews.yaml" -H 'Accept: application/vnd.github.raw' \
   | kubectl --context "$CTX" apply -f -
@@ -260,12 +266,11 @@ The preview's services:
 - backend-1: http://backend-1-quickstart-demo.127.0.0.1.nip.io/items, at pull request #53
 - backend-2: http://backend-2-quickstart-demo.127.0.0.1.nip.io, at `main`
 
-The first command prints the URL of the commit badil wrote to your gitops repo. The next two open the Argo CD UI: print the `admin` password, then forward the UI to https://localhost:8080 (stop it with Ctrl-C).
+The Argo CD UI is at http://argocd.127.0.0.1.nip.io; sign in as `admin`. The first command prints the URL of the commit badil wrote to your gitops repo, the second prints the `admin` password.
 
 ```bash
 gh api "repos/${GITOPS_REPO}/commits?path=previews/quickstart-demo&per_page=1" --jq '.[0].html_url'
 kubectl --context "$CTX" -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
-kubectl --context "$CTX" -n argocd port-forward svc/argocd-server 8080:443
 ```
 
 ## Shortcut: `up.sh`
