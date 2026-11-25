@@ -157,7 +157,7 @@ badil reads three keys from the Secret `badil`:
 
 The first lines write the gitops repo's name and two random values (`openssl rand -hex 32`) to `.quickstart/`, a folder only you can read and that git ignores, without a trailing newline. Values already there are kept, so `up.sh` and these blocks share them. The Secret is created from the files, so no secret value appears on a command line.
 
-Then Helm installs badil's chart in the namespace `badil`, with the App's IDs, the gitops repo and an ingress on `badil.127.0.0.1.nip.io`.
+Then Helm installs badil's chart in the namespace `badil`, with the App's IDs, the gitops repo and an ingress on `badil.127.0.0.1.nip.io`. The ingress routes badil's `/webhooks/github`, which step 5 uses to check that badil answers, and, with `ingress.api=true`, its `/v1` API, which step 6 calls.
 
 ```bash
 mkdir -p .quickstart && chmod 700 .quickstart
@@ -175,13 +175,14 @@ kubectl --context "$CTX" -n badil create secret generic badil \
   | kubectl --context "$CTX" apply -f -
 
 helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
-  --version 0.29.0 \
+  --version 0.30.0 \
   --kube-context "$CTX" -n badil \
   --set-string config.githubAppId="$BADIL_APP_ID" \
   --set-string config.githubInstallationId="$BADIL_INSTALLATION_ID" \
   --set-string config.gitopsRepoURL="https://github.com/${GITOPS_REPO}.git" \
   --set-string existingSecret=badil \
   --set ingress.enabled=true \
+  --set ingress.api=true \
   --set-string ingress.className=traefik \
   --set-string ingress.host=badil.127.0.0.1.nip.io
 ```
@@ -190,10 +191,10 @@ badil reads the Secret when its pod starts. If the Secret changes later (a new k
 
 ### 5. Check badil answers
 
-This prints `200` once badil's pod is up. On the first run the pod waits for its image to download: repeat the command until it prints `200`.
+This prints `401` once badil answers through the ingress: badil refuses an unsigned webhook, which shows that the route and badil are up. On the first run the pod waits for its image to download: repeat the command until it prints `401`.
 
 ```bash
-curl -s --max-time 5 -o /dev/null -w '%{http_code}\n' http://badil.127.0.0.1.nip.io/healthz
+curl -s --max-time 5 -o /dev/null -w '%{http_code}\n' -X POST http://badil.127.0.0.1.nip.io/webhooks/github
 ```
 
 ### 6. Deploy the first preview
