@@ -181,7 +181,7 @@ kubectl --context "$CTX" -n badil create secret generic badil \
   | kubectl --context "$CTX" apply -f -
 
 helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
-  --version 0.30.0 \
+  --version 0.30.1 \
   --kube-context "$CTX" -n badil \
   --set-string config.githubAppId="$BADIL_APP_ID" \
   --set-string config.githubInstallationId="$BADIL_INSTALLATION_ID" \
