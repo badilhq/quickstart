@@ -5,7 +5,7 @@ set -euo pipefail
 # Pinned versions and fixed names.
 K3S_IMAGE="rancher/k3s:v1.37.1-k3s1"
 ARGOCD_CHART_VERSION="10.11.6"
-BADIL_CHART_VERSION="0.29.0"
+BADIL_CHART_VERSION="0.30.0"
 DEMO_PR_URL="https://github.com/badilhq/demo-backend-1/pull/53"
 BADIL_HOST="badil.127.0.0.1.nip.io"
 
@@ -260,6 +260,7 @@ helm upgrade --install badil oci://ghcr.io/badilhq/charts/badil \
   --set-string config.gitopsRepoURL="https://github.com/${GITOPS_REPO}.git" \
   --set-string existingSecret=badil \
   --set ingress.enabled=true \
+  --set ingress.api=true \
   --set-string ingress.className=traefik \
   --set-string ingress.host="$BADIL_HOST"
 # The pod reads the Secret as env vars: restart it when a re-run changed the Secret.
@@ -267,11 +268,11 @@ if [[ "$secret_result" == *" configured"* ]]; then
   kubectl --context "$CTX" -n badil rollout restart deploy/badil
   kubectl --context "$CTX" -n badil rollout status deploy/badil --timeout="${HEALTH_WAIT_SECONDS}s"
 fi
-echo "    waiting for http://${BADIL_HOST}/healthz"
+echo "    waiting for http://${BADIL_HOST}/webhooks/github to answer 401"
 deadline=$((SECONDS + HEALTH_WAIT_SECONDS))
-until [[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://${BADIL_HOST}/healthz" || true)" == "200" ]]; do
+until [[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X POST "http://${BADIL_HOST}/webhooks/github" || true)" == "401" ]]; do
   if ((SECONDS >= deadline)); then
-    echo "badil did not answer on http://${BADIL_HOST}/healthz within ${HEALTH_WAIT_SECONDS}s" >&2
+    echo "badil did not answer 401 on http://${BADIL_HOST}/webhooks/github within ${HEALTH_WAIT_SECONDS}s" >&2
     echo "Inspect with:" >&2
     echo "  kubectl --context ${CTX} -n badil get pods" >&2
     echo "  kubectl --context ${CTX} -n badil logs deploy/badil" >&2
